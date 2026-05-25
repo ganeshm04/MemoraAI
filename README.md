@@ -82,18 +82,8 @@ memora-ai/
 ├── frontend/            # Next.js 15 - Chat UI, retrieval panel, memory display
 ├── db/
 │   └── schema.sql      # PostgreSQL + pgvector schema
-├── docs/
-│   ├── LOCAL_SETUP.md   # Detailed setup guide
-│   ├── PRD.md          # Product requirements
-│   └── ARCHITECTURE_NOTES.md
 └── docker-compose.yml   # Full stack orchestration
 ```
-
----
-
-## 🔧 Detailed Setup Guide
-
-For complete step-by-step instructions, see [docs/LOCAL_SETUP.md](./docs/LOCAL_SETUP.md)
 
 ---
 
@@ -135,17 +125,6 @@ curl -X POST http://localhost:8000/api/v1/query `
 
 ---
 
-## 📚 Documentation
-
-| Document | Description |
-|----------|-------------|
-| [LOCAL_SETUP.md](./docs/LOCAL_SETUP.md) | Complete setup guide |
-| [PRD.md](./docs/PRD.md) | Product requirements |
-| [ARCHITECTURE_NOTES.md](./docs/ARCHITECTURE_NOTES.md) | Technical design |
-| [@ai-logs.md](./@ai-logs.md) | Development logs |
-
----
-
 ## ⚙️ Tech Stack
 
 | Layer | Technology |
@@ -155,17 +134,6 @@ curl -X POST http://localhost:8000/api/v1/query `
 | AI Service | Python, FastAPI, asyncpg, pgvector, sentence-transformers |
 | Database | PostgreSQL + pgvector (**Supabase**) |
 | AI | Gemini 2.5 Flash, text-embedding-004 |
-
----
-
-## 🚀 Zero-Cost Deployment
-
-| Component | Platform | Notes |
-|-----------|----------|-------|
-| Frontend | Vercel | Free unlimited |
-| Backend | Railway | $5 free/month |
-| AI Service | Railway | Python support |
-| Database | **Supabase** | Free tier with pgvector |
 
 ---
 
