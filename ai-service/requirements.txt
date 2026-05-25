@@ -1,0 +1,89 @@
+# MemoraAI - AI Service Dependencies
+# Python 3.11+
+
+# FastAPI & Server
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9
+
+# Database
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+sqlalchemy[asyncio]==2.0.25
+
+# Vector Search
+pgvector==0.2.3
+
+# Embeddings & Reranking
+sentence-transformers==2.4.0
+torch==2.2.0
+transformers==4.37.2
+
+# Gemini API
+google-generativeai==0.3.2
+
+# PDF Processing
+pypdf2==3.0.1
+pymupdf==1.23.8
+pdfplumber==0.10.3
+
+# Web Scraping
+httpx==0.26.0
+beautifulsoup4==4.12.3
+lxml==5.1.0
+
+# Text Processing
+nltk==3.8.1
+spacy==3.7.4
+
+# Configuration
+pydantic==2.6.1
+pydantic-settings==2.1.0
+python-dotenv==1.0.1
+
+# Observability
+structlog==24.1.0
+prometheus-client==0.19.0
+
+# Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Utilities
+aiofiles==23.2.1
+tenacity==8.2.3
+tiktoken==0.5.2
+
+# Testing
+# pytest==8.0.0
+# pytest-asyncio==0.23.4
+httpx==0.26.0
+beautifulsoup4==4.12.3
+lxml==5.1.0
+
+# Text Processing
+nltk==3.8.1
+spacy==3.7.4
+
+# Configuration
+pydantic==2.6.1
+pydantic-settings==2.1.0
+python-dotenv==1.0.1
+
+# Observability
+structlog==24.1.0
+prometheus-client==0.19.0
+
+# Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Utilities
+aiofiles==23.2.1
+tenacity==8.2.3
+tiktoken==0.5.2
+
+# Testing
+# pytest==8.0.0
+# pytest-asyncio==0.23.4
+httpx==0.26.0

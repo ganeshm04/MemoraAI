@@ -1,0 +1,13 @@
+next-env.d.ts
+next.config.js
+node_modules/
+.next/
+dist/
+build/
+*.log
+.env
+.env.local
+.env.production
+.DS_Store
+*.pem
+.vercel
