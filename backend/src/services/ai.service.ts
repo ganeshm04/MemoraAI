@@ -4,6 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import { ConfigService } from '../config/config.service';
 import { IngestPDFDto, IngestURLDto, IngestTextDto } from '../dto/ingest.dto';
 import { QueryDto, ConversationalQueryDto } from '../dto/query.dto';
+import FormData from 'form-data';
 import {
   VectorSearchDto,
   BM25SearchDto,
@@ -14,7 +15,9 @@ import {
   AddMemoryDto,
   StoreFactDto,
   CreateEpisodeDto,
+  SummarizeSessionDto,
 } from '../dto/memory.dto';
+import { requestContext } from '../middleware/request-context';
 
 @Injectable()
 export class AIService {
@@ -31,33 +34,86 @@ export class AIService {
     this.timeout = config.aiServiceTimeout;
   }
 
-  private async request<T>(method: string, path: string, data?: any): Promise<T> {
-    try {
-      const url = `${this.baseURL}/api/v1${path}`;
-      const response = await firstValueFrom(
-        this.httpService.request({
-          method,
-          url,
-          data,
-          timeout: this.timeout,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        }),
-      );
-      return response.data;
-    } catch (error) {
-      this.logger.error(`AI Service request failed: ${path}`, error?.message);
-      throw new HttpException(
-        error?.response?.data?.detail || 'AI service unavailable',
-        error?.response?.status || 503,
-      );
+  private async request<T>(method: string, path: string, data?: any, retries = 2): Promise<T> {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const url = `${this.baseURL}/api/v1${path}`;
+        const context = requestContext.getStore();
+        const requestId = context?.requestId;
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        if (requestId) {
+          headers['x-request-id'] = requestId;
+        }
+
+        const response = await firstValueFrom(
+          this.httpService.request({
+            method,
+            url,
+            data,
+            timeout: this.timeout,
+            headers,
+          }),
+        );
+        return response.data;
+      } catch (error) {
+        const status = error?.response?.status || 503;
+        const isRetryable = status >= 500 || status === 408 || !error?.response;
+        
+        if (isRetryable && attempt < retries) {
+          const delay = Math.pow(2, attempt) * 500;
+          this.logger.warn(`AI Service request retry ${attempt + 1}/${retries}: ${path} (waiting ${delay}ms)`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        this.logger.error(`AI Service request failed: ${path}`, error?.message);
+        throw new HttpException(
+          error?.response?.data?.detail || error?.response?.data?.error || 'AI service unavailable',
+          status,
+        );
+      }
     }
+    throw new HttpException('AI service request failed', 500);
   }
 
   async ingestPDF(dto: IngestPDFDto) {
     this.logger.log('Ingesting PDF', dto.file_path);
     return this.request('POST', '/ingest/pdf', dto);
+  }
+
+  async ingestFile(file: any) {
+    this.logger.log('Uploading file', file.originalname);
+    const url = `${this.baseURL}/api/v1/ingest/file`;
+    const form = new FormData();
+    form.append('file', file.buffer, {
+      filename: file.originalname,
+      contentType: file.mimetype,
+    });
+    try {
+      const context = requestContext.getStore();
+      const requestId = context?.requestId;
+      const headers = {
+        ...form.getHeaders(),
+        ...(requestId ? { 'x-request-id': requestId } : {}),
+      };
+
+      const response = await firstValueFrom(
+        this.httpService.post(url, form, {
+          headers,
+          timeout: this.timeout,
+          maxContentLength: 50 * 1024 * 1024,
+        }),
+      );
+      return response.data;
+    } catch (error) {
+      this.logger.error(`File upload failed: ${file.originalname}`, error?.message);
+      throw new HttpException(
+        error?.response?.data?.detail || 'File upload failed',
+        error?.response?.status || 503,
+      );
+    }
   }
 
   async ingestURL(dto: IngestURLDto) {
@@ -145,6 +201,11 @@ export class AIService {
 
   async createEpisode(dto: CreateEpisodeDto) {
     return this.request('POST', '/memory/episodic', dto);
+  }
+
+  async summarizeEpisode(dto: SummarizeSessionDto) {
+    this.logger.log('Summarizing conversation to episodic memory', dto.session_id);
+    return this.request('POST', '/memory/episodic/summarize', dto);
   }
 
   async getMemoryStats(userId: string) {

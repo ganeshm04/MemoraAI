@@ -43,13 +43,8 @@ class StructuredLogger:
 
     def _configure_logging(self) -> None:
         """Configure structlog for production use."""
-        logging.basicConfig(
-            format="%(message)s",
-            stream=sys.stdout,
-            level=getattr(logging, config.settings.LOG_LEVEL.upper(), logging.INFO),
-        )
-
-        processors = [
+        # 1. Define standard formatting chain
+        shared_processors = [
             structlog.contextvars.merge_contextvars,
             structlog.stdlib.add_log_level,
             structlog.stdlib.add_logger_name,
@@ -58,13 +53,37 @@ class StructuredLogger:
             structlog.processors.format_exc_info,
         ]
 
-        if config.settings.LOG_FORMAT == "json":
-            processors.append(structlog.processors.JSONRenderer())
-        else:
-            processors.append(structlog.dev.ConsoleRenderer())
+        # Choose the renderer
+        renderer = (
+            structlog.processors.JSONRenderer()
+            if config.settings.LOG_FORMAT == "json"
+            else structlog.dev.ConsoleRenderer()
+        )
+
+        # 2. Configure standard logging to use structlog formatter
+        formatter = structlog.stdlib.ProcessorFormatter(
+            foreign_pre_chain=shared_processors,
+            processor=renderer,
+        )
+
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(formatter)
+        
+        root_logger = logging.getLogger()
+        for h in root_logger.handlers[:]:
+            root_logger.removeHandler(h)
+        root_logger.addHandler(handler)
+        root_logger.setLevel(getattr(logging, config.settings.LOG_LEVEL.upper(), logging.INFO))
+
+        # 3. Configure structlog pipeline
+        structlog_processors = shared_processors + [
+            structlog.stdlib.PositionalArgumentsFormatter(),
+            structlog.stdlib.filter_by_level,
+            structlog.stdlib.render_to_log_kwargs,
+        ]
 
         structlog.configure(
-            processors=processors,
+            processors=structlog_processors,
             wrapper_class=structlog.stdlib.BoundLogger,
             context_class=dict,
             logger_factory=structlog.stdlib.LoggerFactory(),

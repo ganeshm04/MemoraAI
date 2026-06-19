@@ -1,10 +1,11 @@
 """
 MemoraAI - FastAPI Application
 Main entry point for the AI microservice.
+Trigger reload for schema update v3.
 """
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import structlog
@@ -12,6 +13,8 @@ import structlog
 from app.config import config
 from app.api.routes import health, ingest, query, search, memory
 from db.connection import db
+from app.observability.middleware import ObservabilityMiddleware
+from app.observability.metrics import metrics
 
 logger = structlog.get_logger(__name__)
 
@@ -43,11 +46,18 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=config.settings.CORS_ORIGINS,
+    allow_origins=[origin.strip() for origin in config.settings.CORS_ORIGINS.split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(ObservabilityMiddleware)
+
+
+@app.get("/metrics")
+async def prometheus_metrics():
+    """Prometheus metrics scrape endpoint."""
+    return Response(content=metrics.to_prometheus_format(), media_type="text/plain")
 
 
 @app.exception_handler(Exception)

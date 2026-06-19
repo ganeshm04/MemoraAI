@@ -3,7 +3,8 @@ MemoraAI - Long-Term Memory
 Persistent user preferences, facts, and interests.
 """
 
-from typing import Optional, list
+import json
+from typing import Optional
 from dataclasses import dataclass
 from datetime import datetime
 import structlog
@@ -80,8 +81,12 @@ class LongTermMemory:
                 RETURNING id
             """
             fact_id = await db.fetchval(
-                query, user_id, category, key, value, confidence, source, metadata or {}
+                query, user_id, category, key, value, confidence, source, json.dumps(metadata or {})
             )
+
+            from app.observability.metrics import memory_metrics
+            memory_metrics.record_memory_operation("write", "long", 1)
+
             return fact_id
 
         except Exception as e:
@@ -97,6 +102,9 @@ class LongTermMemory:
                 WHERE user_id = $1 AND key = $2
             """
             row = await db.fetchrow(query, user_id, key)
+
+            from app.observability.metrics import memory_metrics
+            memory_metrics.record_memory_operation("read", "long", 1 if row else 0)
 
             if not row:
                 return None
@@ -138,7 +146,7 @@ class LongTermMemory:
                 """
                 rows = await db.fetch(query, user_id)
 
-            return [
+            facts = [
                 UserFact(
                     id=row["id"],
                     user_id=row["user_id"],
@@ -153,6 +161,11 @@ class LongTermMemory:
                 )
                 for row in rows
             ]
+
+            from app.observability.metrics import memory_metrics
+            memory_metrics.record_memory_operation("read", "long", len(facts))
+
+            return facts
 
         except Exception as e:
             logger.error("ltm_facts_get_failed", error=str(e))
@@ -193,6 +206,10 @@ class LongTermMemory:
         try:
             query = "DELETE FROM long_term_memory WHERE user_id = $1 AND key = $2"
             result = await db.execute(query, user_id, key)
+
+            from app.observability.metrics import memory_metrics
+            memory_metrics.record_memory_operation("delete", "long", 1 if result != "DELETE 0" else 0)
+
             return result != "DELETE 0"
         except Exception as e:
             logger.error("ltm_fact_delete_failed", error=str(e))

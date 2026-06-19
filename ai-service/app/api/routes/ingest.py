@@ -3,6 +3,8 @@ MemoraAI - API Routes: Ingestion
 Document ingestion endpoints for PDF, URL, and text.
 """
 
+import os
+import tempfile
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -39,6 +41,7 @@ class TextIngestionRequest(BaseModel):
 
 class IngestionResponse(BaseModel):
     success: bool
+    document_id: Optional[int] = None
     source: str
     source_type: str
     chunks_created: int
@@ -59,18 +62,19 @@ async def ingest_pdf(request: PDFIngestionRequest):
         raise HTTPException(status_code=400, detail=validation.errors)
 
     try:
-        result = await processor.ingest_pdf(
-            file_path=request.file_path,
-            metadata=request.metadata,
-        )
-        return IngestionResponse(
-            success=result.success,
-            source=result.source,
-            source_type=result.source_type,
-            chunks_created=result.chunks_created,
-            text_length=result.text_length,
-            errors=result.errors,
-        )
+            result = await processor.ingest_pdf(
+                file_path=request.file_path,
+                metadata=request.metadata,
+            )
+            return IngestionResponse(
+                success=result.success,
+                document_id=result.document_id,
+                source=result.source,
+                source_type=result.source_type,
+                chunks_created=result.chunks_created,
+                text_length=result.text_length,
+                errors=result.errors,
+            )
     except Exception as e:
         logger.error("pdf_ingestion_api_failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
@@ -93,18 +97,19 @@ async def ingest_url(request: URLIngestionRequest):
         raise HTTPException(status_code=400, detail=validation.errors)
 
     try:
-        result = await processor.ingest_url(
-            url=request.url,
-            metadata=request.metadata,
-        )
-        return IngestionResponse(
-            success=result.success,
-            source=result.source,
-            source_type=result.source_type,
-            chunks_created=result.chunks_created,
-            text_length=result.text_length,
-            errors=result.errors,
-        )
+            result = await processor.ingest_url(
+                url=request.url,
+                metadata=request.metadata,
+            )
+            return IngestionResponse(
+                success=result.success,
+                document_id=result.document_id,
+                source=result.source,
+                source_type=result.source_type,
+                chunks_created=result.chunks_created,
+                text_length=result.text_length,
+                errors=result.errors,
+            )
     except Exception as e:
         logger.error("url_ingestion_api_failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
@@ -127,33 +132,75 @@ async def ingest_text(request: TextIngestionRequest):
         raise HTTPException(status_code=400, detail=validation.errors)
 
     try:
-        result = await processor.ingest_text(
-            text=request.text,
-            source=request.source,
-            metadata=request.metadata,
+            result = await processor.ingest_text(
+                text=request.text,
+                source=request.source,
+                metadata=request.metadata,
+            )
+            return IngestionResponse(
+                success=result.success,
+                document_id=result.document_id,
+                source=result.source,
+                source_type=result.source_type,
+                chunks_created=result.chunks_created,
+                text_length=result.text_length,
+                errors=result.errors,
+            )
+    except Exception as e:
+        logger.error("text_ingestion_api_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/file")
+async def ingest_file(file: UploadFile = File(...)):
+    """Upload and ingest a PDF file."""
+    if not file.filename or not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
+    if file.size and file.size > 50 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File size exceeds 50MB limit")
+
+    try:
+        contents = await file.read()
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
+            tmp.write(contents)
+            tmp_path = tmp.name
+
+        result = await processor.ingest_pdf(
+            file_path=tmp_path,
+            metadata={"filename": file.filename},
         )
+
+        os.unlink(tmp_path)
+
         return IngestionResponse(
             success=result.success,
+            document_id=result.document_id,
             source=result.source,
             source_type=result.source_type,
             chunks_created=result.chunks_created,
             text_length=result.text_length,
             errors=result.errors,
         )
+
     except Exception as e:
-        logger.error("text_ingestion_api_failed", error=str(e))
+        logger.error("file_ingestion_failed", filename=file.filename, error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class BatchIngestionRequest(BaseModel):
+    sources: list[dict] = Field(..., description="List of source dicts with 'type' and 'content'")
+
+
 @router.post("/batch")
-async def ingest_batch(sources: list[dict]):
+async def ingest_batch(request: BatchIngestionRequest):
     """Ingest multiple sources in batch."""
-    logger.info("batch_ingestion_request", total=len(sources))
+    logger.info("batch_ingestion_request", total=len(request.sources))
 
     try:
-        results = await processor.ingest_batch(sources)
+        results = await processor.ingest_batch(request.sources)
         return {
-            "total": len(sources),
+            "total": len(request.sources),
             "successful": sum(1 for r in results if r.success),
             "failed": sum(1 for r in results if not r.success),
             "results": [

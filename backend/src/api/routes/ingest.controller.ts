@@ -5,11 +5,16 @@ import {
   HttpCode,
   HttpStatus,
   BadRequestException,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import { AIService } from '../../services/ai.service';
 import { ValidationService } from '../../services/validation.service';
@@ -63,6 +68,31 @@ export class IngestController {
     }
 
     return this.aiService.ingestText(dto);
+  }
+
+  @Post('file')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Upload and ingest PDF file' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'File ingested successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid file' })
+  async ingestFile(@UploadedFile() file: any) {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+    if (!file.originalname.toLowerCase().endsWith('.pdf')) {
+      throw new BadRequestException('Only PDF files are supported');
+    }
+    return this.aiService.ingestFile(file);
   }
 
   @Post('batch')

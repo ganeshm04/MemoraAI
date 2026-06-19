@@ -40,3 +40,16 @@ backend/logs/
 frontend/logs/
 *.log.*
 
+# Nested python cache
+**/__pycache__/
+**/*.pyc
+
+# TypeScript compiler build cache
+*.tsbuildinfo
+frontend/tsconfig.tsbuildinfo
+
+# PDF Ingestion caching
+backend/src/services/*.pdf
+
+
+.agent/*

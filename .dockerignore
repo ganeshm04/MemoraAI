@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+venv/
+__pycache__/
+*.pyc
+.pyo
+
+# Build artifacts
+.next/
+dist/
+build/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+*.md
+docs/
+LICENSE
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Tests
+test/
+tests/
+coverage/
+.pytest_cache/
+jest.config.*
+
+# Misc
+*.log
+.DS_Store
+Thumbs.db
+pip_installing_error

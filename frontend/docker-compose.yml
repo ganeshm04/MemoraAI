@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - NEXT_PUBLIC_API_URL=http://backend:3000/api/v1
+    depends_on:
+      - backend
+    networks:
+      - memora-network
+    restart: unless-stopped
+
+networks:
+  memora-network:
+    driver: bridge

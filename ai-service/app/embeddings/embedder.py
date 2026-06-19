@@ -1,13 +1,13 @@
 """
 MemoraAI - Embedding Service
-text-embedding-004 integration with caching and retry logic.
+Google Gemini Embedding API integration with caching and retry logic.
 """
 
-import os
 import hashlib
 from typing import Optional
 from functools import lru_cache
 import structlog
+import httpx
 
 from app.config import config
 
@@ -45,41 +45,62 @@ class EmbeddingCache:
 
 class Embedder:
     """
-    Text embedding service using Google AI text-embedding-004.
+    Text embedding service using Google Gemini Embedding API.
+    
+    Available models (confirmed via API):
+    - gemini-embedding-001
+    - gemini-embedding-2
     
     Features:
-    - Automatic retry with exponential backoff
+    - Automatic retry with fallback models
     - In-memory caching
     - Batch embedding support
-    - Fallback error handling
     """
 
     def __init__(self):
-        self.api_key = config.settings.GOOGLE_API_KEY or config.settings.GEMINI_API_KEY
         self.model_name = config.settings.EMBEDDING_MODEL
         self.dimension = config.settings.EMBEDDING_DIMENSION
         self.cache = EmbeddingCache()
-        self._client = None
+        self._http_client = None
+        self._current_key_idx = 0
+
+    def _get_api_keys(self) -> list[str]:
+        """Split and return the list of Google/Gemini API keys configured for embeddings."""
+        raw_keys = config.settings.GOOGLE_API_KEY or config.settings.GEMINI_API_KEY
+        return [k.strip() for k in raw_keys.split(",") if k.strip()]
 
     def _get_client(self):
-        """Lazy load Google AI client."""
-        if self._client is None:
-            try:
-                import google.generativeai as genai
-                genai.configure(api_key=self.api_key)
-                self._client = genai
-                logger.info("gemini_client_configured", model=self.model_name)
-            except ImportError:
-                logger.error("google-generativeai_not_installed")
-                raise
-        return self._client
+        if self._http_client is None:
+            self._http_client = httpx.AsyncClient(timeout=30.0)
+        return self._http_client
+
+    async def _call_embedding_api(self, text: str, model: str, api_version: str = "v1", api_key: str = None) -> list[float]:
+        """Call Google Gemini Embedding API with the specified key context."""
+        client = self._get_client()
+        url = f"https://generativelanguage.googleapis.com/{api_version}/models/{model}:embedContent"
+
+        payload = {
+            "model": f"models/{model}",
+            "content": {
+                "parts": [{"text": text}]
+            },
+        }
+
+        response = await client.post(
+            url,
+            params={"key": api_key},
+            json=payload,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["embedding"]["values"]
 
     async def embed_text(self, text: str) -> list[float]:
         """
         Generate embedding for a single text.
         
         Args:
-            text: Text to embed (max ~2000 tokens)
+            text: Text to embed
             
         Returns:
             List of floats representing the embedding vector
@@ -89,36 +110,70 @@ class Embedder:
             logger.debug("embedding_cache_hit", text_length=len(text))
             return cached
 
-        for attempt in range(3):
-            try:
-                client = self._get_client()
-                result = client.embed_content(
-                    model=f"models/{self.model_name}",
-                    content=text,
-                    task_type="RETRIEVAL_DOCUMENT",
-                )
-                embedding = result["embedding"]
-                
-                if len(embedding) != self.dimension:
-                    logger.warning(
-                        "embedding_dimension_mismatch",
-                        expected=self.dimension,
-                        actual=len(embedding),
+        models_to_try = [
+            ("gemini-embedding-001", "v1"),
+            ("gemini-embedding-2", "v1"),
+            ("gemini-embedding-001", "v1beta"),
+        ]
+
+        import time
+        from app.observability.metrics import generation_metrics
+
+        keys = self._get_api_keys()
+        if not keys:
+            raise ValueError("No API keys configured for embedding")
+
+        start_time = time.perf_counter()
+        last_error = None
+
+        # Iterate over keys starting from self._current_key_idx
+        for i in range(len(keys)):
+            key_idx = (self._current_key_idx + i) % len(keys)
+            current_key = keys[key_idx]
+
+            for attempt, (model_name, api_ver) in enumerate(models_to_try):
+                try:
+                    embedding = await self._call_embedding_api(text, model_name, api_ver, current_key)
+
+                    if len(embedding) != self.dimension:
+                        logger.warning(
+                            "embedding_dimension_mismatch",
+                            expected=self.dimension,
+                            actual=len(embedding),
+                        )
+
+                    self.cache.set(text, embedding)
+                    
+                    duration_ms = (time.perf_counter() - start_time) * 1000.0
+                    generation_metrics.record_embedding(duration_ms, 1)
+
+                    logger.info(
+                        "embedding_generated",
+                        model=model_name,
+                        api=api_ver,
+                        dimension=len(embedding),
+                        duration_ms=round(duration_ms, 2),
+                        key_index=key_idx,
                     )
+                    
+                    # Update current active key index
+                    self._current_key_idx = key_idx
+                    return embedding
 
-                self.cache.set(text, embedding)
-                logger.info("embedding_generated", dimension=len(embedding))
-                return embedding
+                except Exception as e:
+                    logger.warning(
+                        "embedding_attempt_failed",
+                        attempt=attempt + 1,
+                        model=model_name,
+                        key_index=key_idx,
+                        error=str(e)[:100],
+                    )
+                    last_error = e
 
-            except Exception as e:
-                logger.warning(
-                    "embedding_attempt_failed",
-                    attempt=attempt + 1,
-                    error=str(e),
-                )
-                if attempt == 2:
-                    logger.error("embedding_all_attempts_failed", text_length=len(text))
-                    raise
+        logger.error("embedding_all_keys_failed")
+        if last_error:
+            raise last_error
+        raise ValueError("All embedding API keys failed")
 
     async def embed_texts(self, texts: list[str]) -> list[list[float]]:
         """
@@ -146,7 +201,7 @@ class Embedder:
                     embedding = await self.embed_text(text)
                     results.append(embedding)
                 except Exception as e:
-                    logger.error("batch_embedding_failed", text=text[:100], error=str(e))
+                    logger.error("batch_embedding_failed", text=text[:100], error=str(e)[:100])
                     results.append([0.0] * self.dimension)
 
         logger.info(
@@ -167,25 +222,7 @@ class Embedder:
         Returns:
             Embedding vector for the query
         """
-        for attempt in range(3):
-            try:
-                client = self._get_client()
-                result = client.embed_content(
-                    model=f"models/{self.model_name}",
-                    content=query,
-                    task_type="RETRIEVAL_QUERY",
-                )
-                return result["embedding"]
-
-            except Exception as e:
-                logger.warning(
-                    "query_embedding_failed",
-                    attempt=attempt + 1,
-                    error=str(e),
-                )
-                if attempt == 2:
-                    logger.error("query_embedding_exhausted", query=query[:50])
-                    raise
+        return await self.embed_text(query)
 
     def clear_cache(self) -> None:
         """Clear the embedding cache."""
@@ -197,10 +234,9 @@ class Embedder:
 def _cached_embed_sync(text: str) -> list[float]:
     """
     Synchronous cached embedding for non-async contexts.
-    Use this only for non-critical paths.
     """
-    embedder = Embedder()
     import asyncio
+    embedder = Embedder()
     return asyncio.run(embedder.embed_text(text))
 
 

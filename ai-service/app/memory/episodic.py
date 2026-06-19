@@ -3,7 +3,7 @@ MemoraAI - Episodic Memory
 Session summaries and historical interaction understanding.
 """
 
-from typing import Optional, list
+from typing import Optional
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import structlog
@@ -92,6 +92,10 @@ class EpisodicMemory:
                 duration_minutes,
                 message_count,
             )
+
+            from app.observability.metrics import memory_metrics
+            memory_metrics.record_memory_operation("write", "episodic", 1)
+
             return episode_id
 
         except Exception as e:
@@ -128,7 +132,7 @@ class EpisodicMemory:
             """
             rows = await db.fetch(query, user_id, cutoff_date, limit)
 
-            return [
+            episodes = [
                 Episode(
                     id=row["id"],
                     user_id=row["user_id"],
@@ -143,6 +147,11 @@ class EpisodicMemory:
                 )
                 for row in rows
             ]
+
+            from app.observability.metrics import memory_metrics
+            memory_metrics.record_memory_operation("read", "episodic", len(episodes))
+
+            return episodes
 
         except Exception as e:
             logger.error("em_recent_episodes_get_failed", error=str(e))

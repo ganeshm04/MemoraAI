@@ -173,6 +173,29 @@ Extracted information (JSON):"""
 
         return system_prompt, user_prompt
 
+    def get_episodic_summary_prompt(self, conversation: list[dict]) -> tuple[str, str]:
+        """Get prompt for summarizing a conversation session into episodic memory."""
+        system_prompt = """You are an AI assistant that analyzes a conversation session and generates a summary for episodic memory.
+
+Provide a response in JSON format containing:
+1. "summary": A concise 1-2 sentence summary of the main goal and outcome of the conversation (max 200 characters).
+2. "key_topics": A list of up to 5 main topics discussed (e.g. ["Python", "Docker deployment", "Postgres index query"]).
+3. "important_facts": A list of up to 5 critical user details, facts, or preferences shared (e.g. ["User is developing a NestJS backend", "User prefers dark mode UI"]).
+4. "sentiment": A single word describing the overall user sentiment: "positive", "neutral", or "negative".
+
+Your output MUST be a valid JSON object."""
+
+        conversation_text = "\n".join([
+            f"{msg.get('role', 'user')}: {msg.get('content', '')}"
+            for msg in conversation
+        ])
+
+        user_prompt = f"""Conversation to summarize:
+{conversation_text}
+
+JSON Output:"""
+        return system_prompt, user_prompt
+
 
 class FallbackPrompts:
     """Safe fallback prompts for error cases."""

@@ -32,17 +32,17 @@ class ContentSanitizer:
     """
 
     INSTRUCTION_PATTERNS = [
-        r"(?i)(ignore (previous|above|all)|disregard (previous|above|all))",
-        r"(?i)(forget (your|this)|you (must|should|have to))",
-        r"(?i)(new (instruction|command|rule))",
-        r"(?i)(system:|assistant:|user:|human:)",
-        r"(?i)(<\|(?:system|user|assistant)\|>)",
-        r"(?i)(\[INST\]|\[\/INST\])",
-        r"(?i)(<<SYS>>|<<\/SYS>>)",
-        r"(?i)(You are (now a|acting as a|just a))",
-        r"(?i)(Now (pretend|act|be|you are))",
-        r"(?i)(Override (your|this)|bypass (your|this))",
-        r"(?i)(DAN|do anything now|jailbreak)",
+        r"(ignore (previous|above|all)|disregard (previous|above|all))",
+        r"(forget (your|this)|you (must|should|have to))",
+        r"(new (instruction|command|rule))",
+        r"(system:|assistant:|user:|human:)",
+        r"(<\|(?:system|user|assistant)\|>)",
+        r"(\[INST\]|\[\/INST\])",
+        r"(<<SYS>>|<<\/SYS>>)",
+        r"(You are (now a|acting as a|just a))",
+        r"(Now (pretend|act|be|you are))",
+        r"(Override (your|this)|bypass (your|this))",
+        r"(DAN|do anything now|jailbreak)",
     ]
 
     DANGEROUS_PATTERNS = [

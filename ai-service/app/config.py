@@ -5,7 +5,7 @@ Handles environment variables and application settings.
 
 from typing import Optional
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, field_validator
 
 
 class Settings(BaseSettings):
@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     DB_POOL_TIMEOUT: int = 30
 
     # Vector Search
-    VECTOR_DIMENSION: int = 768
+    VECTOR_DIMENSION: int = 3072
     TOP_K_RETRIEVAL: int = 10
     TOP_K_RERANKED: int = 5
     SIMILARITY_THRESHOLD: float = 0.7
@@ -48,9 +48,9 @@ class Settings(BaseSettings):
     RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     RERANK_TOP_K: int = 5
 
-    # Embedding Model
-    EMBEDDING_MODEL: str = "text-embedding-004"
-    EMBEDDING_DIMENSION: int = 768
+    # Embedding Model (Google Gemini Embedding API)
+    EMBEDDING_MODEL: str = "gemini-embedding-001"
+    EMBEDDING_DIMENSION: int = 3072
 
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 100
@@ -70,12 +70,13 @@ class Settings(BaseSettings):
     GENERATION_TIMEOUT: int = 60
 
     # CORS
-    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:4000"]
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001,http://localhost:4000"
 
     class Config:
-        env_file = ".env"
+        env_file = "../.env"
         env_file_encoding = "utf-8"
         case_sensitive = True
+        extra = "ignore"
 
 
 class DatabaseConfig:

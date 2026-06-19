@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from collections import defaultdict
 import structlog
 
-from app.config import config
+from app.config import config as app_config
 
 logger = structlog.get_logger(__name__)
 
@@ -47,7 +47,7 @@ class ReciprocalRankFusion:
     """
 
     def __init__(self, config: Optional[FusionConfig] = None):
-        self.config = config or FusionConfig(k=config.retrieval.rrf_k)
+        self.config = config or FusionConfig(k=app_config.retrieval.rrf_k)
         self.weights = self.config.weights
 
     def fuse(

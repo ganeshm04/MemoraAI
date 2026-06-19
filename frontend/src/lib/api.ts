@@ -1,6 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
 
 class ApiClient {
   private client: AxiosInstance;
@@ -42,6 +42,16 @@ class ApiClient {
     max_tokens?: number;
   }) {
     const response = await this.client.post('/query', data);
+    return response.data;
+  }
+
+  async uploadFile(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await this.client.post('/ingest/file', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      maxContentLength: 50 * 1024 * 1024,
+    });
     return response.data;
   }
 
@@ -126,6 +136,16 @@ class ApiClient {
 
   async getMemoryStats(userId: string) {
     const response = await this.client.get(`/memory/stats/${userId}`);
+    return response.data;
+  }
+
+  async clearShortTermMemory(sessionId: string) {
+    const response = await this.client.delete(`/memory/short/${sessionId}`);
+    return response.data;
+  }
+
+  async summarizeSession(data: { user_id: string; session_id: string }) {
+    const response = await this.client.post('/memory/episodic/summarize', data);
     return response.data;
   }
 

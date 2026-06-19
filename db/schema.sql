@@ -1,9 +1,4 @@
-# MemoraAI - Database Schema
-# PostgreSQL with pgvector for semantic search
-# PostgreSQL Full-Text Search for BM25
-
--- Enable required extensions
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- MemoraAI - Database Schema
 CREATE EXTENSION IF NOT EXISTS "vector";
 
 -- Documents table
@@ -18,15 +13,15 @@ CREATE TABLE IF NOT EXISTS documents (
     indexed BOOLEAN DEFAULT FALSE
 );
 
-CREATE INDEX idx_documents_source_type ON documents(source_type);
-CREATE INDEX idx_documents_created_at ON documents(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_documents_source_type ON documents(source_type);
+CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at DESC);
 
 -- Chunks table with vector embeddings
 CREATE TABLE IF NOT EXISTS chunks (
     id SERIAL PRIMARY KEY,
     document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
-    embedding VECTOR(768),
+    embedding VECTOR(3072),
     metadata JSONB DEFAULT '{}',
     chunk_index INTEGER NOT NULL,
     total_chunks INTEGER NOT NULL,
@@ -37,15 +32,15 @@ CREATE TABLE IF NOT EXISTS chunks (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Vector similarity index
-CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON chunks USING ivfflat (embedding vector_cosine_ops)
-WITH (lists = 100);
+-- Vector similarity index (disabled because pgvector indexes (ivfflat/hnsw) do not support > 2000 dimensions)
+-- CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON chunks USING ivfflat (embedding vector_cosine_ops)
+-- WITH (lists = 100);
 
 -- Full-text search index
 CREATE INDEX IF NOT EXISTS idx_chunks_search ON chunks USING gin(search_vector);
 
 -- Composite index for document lookup
-CREATE INDEX idx_chunks_document_id ON chunks(document_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON chunks(document_id);
 
 -- Short-term memory (conversation history)
 CREATE TABLE IF NOT EXISTS short_term_memory (
@@ -58,9 +53,9 @@ CREATE TABLE IF NOT EXISTS short_term_memory (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_stm_session_id ON short_term_memory(session_id);
-CREATE INDEX idx_stm_created_at ON short_term_memory(created_at DESC);
-CREATE INDEX idx_stm_session_time ON short_term_memory(session_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stm_session_id ON short_term_memory(session_id);
+CREATE INDEX IF NOT EXISTS idx_stm_created_at ON short_term_memory(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stm_session_time ON short_term_memory(session_id, created_at DESC);
 
 -- Long-term memory (persistent user facts)
 CREATE TABLE IF NOT EXISTS long_term_memory (
@@ -77,8 +72,8 @@ CREATE TABLE IF NOT EXISTS long_term_memory (
     UNIQUE(user_id, key)
 );
 
-CREATE INDEX idx_ltm_user_id ON long_term_memory(user_id);
-CREATE INDEX idx_ltm_category ON long_term_memory(user_id, category);
+CREATE INDEX IF NOT EXISTS idx_ltm_user_id ON long_term_memory(user_id);
+CREATE INDEX IF NOT EXISTS idx_ltm_category ON long_term_memory(user_id, category);
 
 -- Episodic memory (session summaries)
 CREATE TABLE IF NOT EXISTS episodic_memory (
@@ -94,10 +89,10 @@ CREATE TABLE IF NOT EXISTS episodic_memory (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_em_user_id ON episodic_memory(user_id);
-CREATE INDEX idx_em_session_id ON episodic_memory(session_id);
-CREATE INDEX idx_em_created_at ON episodic_memory(created_at DESC);
-CREATE INDEX idx_em_user_time ON episodic_memory(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_em_user_id ON episodic_memory(user_id);
+CREATE INDEX IF NOT EXISTS idx_em_session_id ON episodic_memory(session_id);
+CREATE INDEX IF NOT EXISTS idx_em_created_at ON episodic_memory(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_em_user_time ON episodic_memory(user_id, created_at DESC);
 
 -- Ingestion jobs tracking
 CREATE TABLE IF NOT EXISTS ingestion_jobs (
@@ -113,8 +108,8 @@ CREATE TABLE IF NOT EXISTS ingestion_jobs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_ij_status ON ingestion_jobs(status);
-CREATE INDEX idx_ij_source ON ingestion_jobs(source);
+CREATE INDEX IF NOT EXISTS idx_ij_status ON ingestion_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_ij_source ON ingestion_jobs(source);
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -125,12 +120,14 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Triggers for updated_at
+-- Triggers for updated_at (drop first to allow re-running)
+DROP TRIGGER IF EXISTS update_documents_updated_at ON documents;
 CREATE TRIGGER update_documents_updated_at
     BEFORE UPDATE ON documents
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_ltm_updated_at ON long_term_memory;
 CREATE TRIGGER update_ltm_updated_at
     BEFORE UPDATE ON long_term_memory
     FOR EACH ROW

@@ -68,11 +68,14 @@ class RetrievalPipeline:
     6. Return top-k results
     """
 
-    def __init__(self, config: Optional[PipelineConfig] = None):
-        self.config = config or PipelineConfig(
-            top_k_initial=config.vector.top_k if config else 10,
-            top_k_final=config.vector.top_k_reranked if config else 5,
+    def __init__(self, pipeline_config: Optional[PipelineConfig] = None):
+        from app.config import config as app_config
+        self.config = pipeline_config or PipelineConfig(
+            top_k_initial=app_config.vector.top_k,
+            top_k_final=app_config.vector.top_k_reranked,
             use_reranking=True,
+            similarity_threshold=app_config.vector.similarity_threshold,
+            rrf_k=app_config.retrieval.rrf_k,
         )
         self.vector_searcher = VectorSearcher()
         self.bm25_searcher = BM25Searcher()
@@ -193,11 +196,16 @@ class RetrievalPipeline:
         bm25_results: list[BM25Result],
     ) -> list[FusedResult]:
         """Fuse vector and BM25 results using RRF."""
+        import time
+        from app.observability.metrics import retrieval_metrics
+
+        start_time = time.perf_counter()
+
         if not vector_results and not bm25_results:
             return []
 
         if not vector_results:
-            return [FusedResult(
+            fused = [FusedResult(
                 id=r.id,
                 content=r.content,
                 metadata=r.metadata,
@@ -205,9 +213,8 @@ class RetrievalPipeline:
                 bm25_rank=r.rank,
                 source=r.source,
             ) for r in bm25_results]
-
-        if not bm25_results:
-            return [FusedResult(
+        elif not bm25_results:
+            fused = [FusedResult(
                 id=r.id,
                 content=r.content,
                 metadata=r.metadata,
@@ -215,24 +222,27 @@ class RetrievalPipeline:
                 vector_rank=r.rank,
                 source=r.source,
             ) for r in vector_results]
+        else:
+            fused = self.fusion.fuse(
+                vector_results=vector_results,
+                bm25_results=bm25_results,
+                k=self.config.rrf_k,
+            )
 
-        fused = self.fusion.fuse(
-            vector_results=vector_results,
-            bm25_results=bm25_results,
-            k=self.config.rrf_k,
-        )
+            for result in fused:
+                for vr in vector_results:
+                    if vr.id == result.id:
+                        result.vector_score = vr.score
+                        result.vector_rank = vr.rank
+                        break
+                for br in bm25_results:
+                    if br.id == result.id:
+                        result.bm25_score = br.score
+                        result.bm25_rank = br.rank
+                        break
 
-        for result in fused:
-            for vr in vector_results:
-                if vr.id == result.id:
-                    result.vector_score = vr.score
-                    result.vector_rank = vr.rank
-                    break
-            for br in bm25_results:
-                if br.id == result.id:
-                    result.bm25_score = br.score
-                    result.bm25_rank = br.rank
-                    break
+        duration_ms = (time.perf_counter() - start_time) * 1000.0
+        retrieval_metrics.record_fusion(duration_ms, len(vector_results) + len(bm25_results), len(fused))
 
         return fused
 
@@ -242,6 +252,10 @@ class RetrievalPipeline:
         results: list[FusedResult],
     ) -> list[FusedResult]:
         """Rerank fused results using cross-encoder."""
+        import time
+        from app.observability.metrics import retrieval_metrics
+
+        start_time = time.perf_counter()
         try:
             docs = [{
                 "content": r.content,
@@ -260,9 +274,14 @@ class RetrievalPipeline:
                     results[original_idx].rerank_score = rerank_result.get("rerank_score", 0)
 
             results.sort(key=lambda x: x.rerank_score if x.rerank_score > 0 else x.fused_score, reverse=True)
+            
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
+            retrieval_metrics.record_rerank(duration_ms, len(results), len(results))
+
             return results
 
         except Exception as e:
+            retrieval_metrics.record_failure("rerank", type(e).__name__)
             logger.warning("reranking_in_pipeline_failed", error=str(e))
             return results
 

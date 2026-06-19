@@ -6,6 +6,7 @@ PostgreSQL Full-Text Search for keyword-based retrieval.
 from typing import Optional
 from dataclasses import dataclass
 import structlog
+import json
 
 from db.connection import db, fts_search
 from app.config import config
@@ -72,6 +73,10 @@ class BM25Searcher:
             top_k=top_k,
         )
 
+        import time
+        from app.observability.metrics import retrieval_metrics
+
+        start_time = time.perf_counter()
         try:
             results = await fts_search.search(
                 table=table,
@@ -82,17 +87,29 @@ class BM25Searcher:
 
             bm25_results = []
             for rank, row in enumerate(results, 1):
+                meta = row["metadata"]
+                if isinstance(meta, str):
+                    try:
+                        meta = json.loads(meta)
+                    except Exception:
+                        meta = {}
+                if not isinstance(meta, dict):
+                    meta = {}
+
                 bm25_results.append(
                     BM25Result(
                         id=row["id"],
                         content=row["content"],
-                        metadata=row["metadata"],
+                        metadata=meta,
                         rank=rank,
                         score=row["bm25_score"],
                         headline=row.get("headline", ""),
-                        source=row["metadata"].get("source", ""),
+                        source=meta.get("source", ""),
                     )
                 )
+
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
+            retrieval_metrics.record_search("bm25", duration_ms, len(bm25_results))
 
             logger.info(
                 "bm25_search_completed",
@@ -103,6 +120,7 @@ class BM25Searcher:
             return bm25_results
 
         except Exception as e:
+            retrieval_metrics.record_failure("bm25_search", type(e).__name__)
             logger.error("bm25_search_failed", error=str(e), query=query[:100])
             raise
 
@@ -159,15 +177,24 @@ class BM25Searcher:
 
                 bm25_results = []
                 for rank, row in enumerate(results, 1):
+                    meta = row["metadata"]
+                    if isinstance(meta, str):
+                        try:
+                            meta = json.loads(meta)
+                        except Exception:
+                            meta = {}
+                    if not isinstance(meta, dict):
+                        meta = {}
+
                     bm25_results.append(
                         BM25Result(
                             id=row["id"],
                             content=row["content"],
-                            metadata=row["metadata"],
+                            metadata=meta,
                             rank=rank,
                             score=row["rank"],
                             headline=row.get("headline", ""),
-                            source=row["metadata"].get("source", ""),
+                            source=meta.get("source", ""),
                         )
                     )
 

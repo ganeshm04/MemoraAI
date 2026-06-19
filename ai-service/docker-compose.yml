@@ -1,0 +1,25 @@
+# MemoraAI - AI Service Docker Compose
+version: '3.8'
+
+services:
+  ai-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/memora
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - DEBUG=true
+      - LOG_LEVEL=info
+    depends_on:
+      - postgres
+    networks:
+      - memora-network
+    restart: unless-stopped
+
+networks:
+  memora-network:
+    driver: bridge

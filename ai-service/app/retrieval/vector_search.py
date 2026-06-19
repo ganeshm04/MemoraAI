@@ -6,6 +6,7 @@ pgvector similarity search implementation.
 from typing import Optional, Literal
 from dataclasses import dataclass
 import structlog
+import json
 
 from db.connection import db, vector_store
 from app.config import config
@@ -44,11 +45,16 @@ class VectorSearcher:
     - Fallback error handling
     """
 
-    def __init__(self, config: Optional[VectorSearchConfig] = None):
-        self.config = config or VectorSearchConfig(
-            top_k=config.vector.top_k,
-            threshold=config.vector.similarity_threshold,
-        )
+    def __init__(self, config=None):
+        # If no config is provided, use the global config
+        if config is None:
+            from app.config import config as global_config
+            self.config = VectorSearchConfig(
+                top_k=global_config.vector.top_k,
+                threshold=global_config.vector.similarity_threshold,
+            )
+        else:
+            self.config = config
 
     async def search(
         self,
@@ -84,6 +90,10 @@ class VectorSearcher:
             threshold=threshold,
         )
 
+        import time
+        from app.observability.metrics import retrieval_metrics
+
+        start_time = time.perf_counter()
         try:
             results = await vector_store.search_similarity(
                 table=table,
@@ -96,16 +106,28 @@ class VectorSearcher:
 
             search_results = []
             for rank, row in enumerate(results, 1):
+                meta = row["metadata"]
+                if isinstance(meta, str):
+                    try:
+                        meta = json.loads(meta)
+                    except Exception:
+                        meta = {}
+                if not isinstance(meta, dict):
+                    meta = {}
+
                 search_results.append(
                     SearchResult(
                         id=row["id"],
                         content=row["content"],
-                        metadata=row["metadata"],
+                        metadata=meta,
                         score=row["similarity"],
                         rank=rank,
-                        source=row["metadata"].get("source", ""),
+                        source=meta.get("source", ""),
                     )
                 )
+
+            duration_ms = (time.perf_counter() - start_time) * 1000.0
+            retrieval_metrics.record_search("vector", duration_ms, len(search_results))
 
             logger.info(
                 "vector_search_completed",
@@ -116,6 +138,7 @@ class VectorSearcher:
             return search_results
 
         except Exception as e:
+            retrieval_metrics.record_failure("vector_search", type(e).__name__)
             logger.error("vector_search_failed", error=str(e), table=table)
             raise
 

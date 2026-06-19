@@ -135,16 +135,6 @@ curl -X POST http://localhost:8000/api/v1/query `
 
 ---
 
-## 📚 Documentation
-
-| Document | Description |
-|----------|-------------|
-| [LOCAL_SETUP.md](./docs/LOCAL_SETUP.md) | Complete setup guide |
-| [PRD.md](./docs/PRD.md) | Product requirements |
-| [ARCHITECTURE_NOTES.md](./docs/ARCHITECTURE_NOTES.md) | Technical design |
-| [@ai-logs.md](./@ai-logs.md) | Development logs |
-
----
 
 ## ⚙️ Tech Stack
 
@@ -153,21 +143,9 @@ curl -X POST http://localhost:8000/api/v1/query `
 | Frontend | Next.js 15, TypeScript, Tailwind CSS, shadcn/ui, Framer Motion |
 | Backend | NestJS, TypeScript, Zod, class-validator |
 | AI Service | Python, FastAPI, asyncpg, pgvector, sentence-transformers |
-| Database | PostgreSQL + pgvector (**Supabase**) |
+| Database | PostgreSQL + pgvector |
 | AI | Gemini 2.5 Flash, text-embedding-004 |
 
----
-
-## 🚀 Zero-Cost Deployment
-
-| Component | Platform | Notes |
-|-----------|----------|-------|
-| Frontend | Vercel | Free unlimited |
-| Backend | Railway | $5 free/month |
-| AI Service | Railway | Python support |
-| Database | **Supabase** | Free tier with pgvector |
-
----
 
 ## 🔧 Troubleshooting
 
@@ -187,9 +165,3 @@ taskkill /PID <process_id> /F
 cd ai-service
 pip install -r requirements.txt --force-reinstall
 ```
-
----
-
-## 📄 License
-
-MIT

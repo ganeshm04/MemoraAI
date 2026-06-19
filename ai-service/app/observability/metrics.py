@@ -107,6 +107,97 @@ class MetricsCollector:
         self._histograms.clear()
         self._timestamps.clear()
 
+    def to_prometheus_format(self) -> str:
+        """Generate Prometheus exposition format string."""
+        from collections import defaultdict
+        lines = []
+        
+        # 1. Export counters
+        counters_by_base = defaultdict(list)
+        for key, value in self._counters.items():
+            base_name = key.split('{')[0]
+            counters_by_base[base_name].append((key, value))
+            
+        for base_name, pts in sorted(counters_by_base.items()):
+            lines.append(f"# TYPE {base_name} counter")
+            for key, val in pts:
+                prom_key = self._format_prometheus_key(key)
+                lines.append(f"{prom_key} {val}")
+                
+        # 2. Export gauges
+        gauges_by_base = defaultdict(list)
+        for key, value in self._gauges.items():
+            base_name = key.split('{')[0]
+            gauges_by_base[base_name].append((key, value))
+            
+        for base_name, pts in sorted(gauges_by_base.items()):
+            lines.append(f"# TYPE {base_name} gauge")
+            for key, val in pts:
+                prom_key = self._format_prometheus_key(key)
+                lines.append(f"{prom_key} {val}")
+                
+        # 3. Export histograms as Summaries (standard Prometheus practice for simple collectors)
+        histograms_by_base = defaultdict(list)
+        for key, values in self._histograms.items():
+            base_name = key.split('{')[0]
+            histograms_by_base[base_name].append((key, values))
+            
+        for base_name, pts in sorted(histograms_by_base.items()):
+            lines.append(f"# TYPE {base_name} summary")
+            for key, values in pts:
+                if not values:
+                    continue
+                total_sum = sum(values)
+                total_count = len(values)
+                
+                labels_part = ""
+                if "{" in key:
+                    labels_part = key[key.find("{")+1:-1]
+                    
+                def format_labels(extra_labels: dict = None) -> str:
+                    all_labels = {}
+                    if labels_part:
+                        for item in labels_part.split(","):
+                            if "=" in item:
+                                parts = item.split("=", 1)
+                                if len(parts) == 2:
+                                    all_labels[parts[0]] = parts[1]
+                    if extra_labels:
+                        all_labels.update(extra_labels)
+                    if not all_labels:
+                        return ""
+                    return "{" + ",".join(f'{k}="{v}"' for k, v in sorted(all_labels.items())) + "}"
+                
+                lines.append(f"{base_name}_sum{format_labels()} {total_sum}")
+                lines.append(f"{base_name}_count{format_labels()} {total_count}")
+                
+                # Percentiles: p50, p90, p99
+                sorted_vals = sorted(values)
+                n = len(sorted_vals)
+                p50 = sorted_vals[int(n * 0.5)]
+                p90 = sorted_vals[int(n * 0.9)] if n > 1 else sorted_vals[0]
+                p99 = sorted_vals[int(n * 0.99)] if n > 1 else sorted_vals[0]
+                
+                lines.append(f'{base_name}{format_labels({"quantile": "0.5"})} {p50}')
+                lines.append(f'{base_name}{format_labels({"quantile": "0.9"})} {p90}')
+                lines.append(f'{base_name}{format_labels({"quantile": "0.99"})} {p99}')
+                
+        return "\n".join(lines) + "\n"
+
+    def _format_prometheus_key(self, key: str) -> str:
+        """Convert key with unquoted labels to Prometheus format with quoted labels."""
+        if "{" not in key:
+            return key
+        base_name = key.split('{')[0]
+        labels_str = key[key.find("{")+1:-1]
+        formatted_labels = []
+        for item in labels_str.split(","):
+            if "=" in item:
+                parts = item.split("=", 1)
+                if len(parts) == 2:
+                    formatted_labels.append(f'{parts[0]}="{parts[1]}"')
+        return f"{base_name}{{{','.join(formatted_labels)}}}"
+
 
 class RetrievalMetrics:
     """Metrics specific to retrieval operations."""

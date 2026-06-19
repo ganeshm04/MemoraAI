@@ -5,6 +5,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
@@ -19,6 +20,7 @@ import {
   AddMemoryDto,
   StoreFactDto,
   CreateEpisodeDto,
+  SummarizeSessionDto,
 } from '../../dto/memory.dto';
 
 @ApiTags('memory')
@@ -31,12 +33,12 @@ export class MemoryController {
   @ApiParam({ name: 'sessionId', description: 'Session identifier' })
   async getShortTermMemory(
     @Param('sessionId') sessionId: string,
-    @Body('limit') limit?: number,
+    @Query('limit') limit?: number,
   ) {
     return this.aiService.getShortTermMemory(sessionId, limit);
   }
 
-  @Post('short')
+  @Post('short/add')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Add to short-term memory' })
   async addShortTermMemory(@Body() dto: AddMemoryDto) {
@@ -54,12 +56,12 @@ export class MemoryController {
   @ApiParam({ name: 'userId', description: 'User identifier' })
   async getLongTermMemory(
     @Param('userId') userId: string,
-    @Body('category') category?: string,
+    @Query('category') category?: string,
   ) {
     return this.aiService.getLongTermMemory(userId, category);
   }
 
-  @Post('long')
+  @Post('long/fact')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Store fact in long-term memory' })
   async storeLongTermFact(@Body() dto: StoreFactDto) {
@@ -80,8 +82,8 @@ export class MemoryController {
   @ApiParam({ name: 'userId', description: 'User identifier' })
   async getEpisodicMemory(
     @Param('userId') userId: string,
-    @Body('limit') limit?: number,
-    @Body('days') days?: number,
+    @Query('limit') limit?: number,
+    @Query('days') days?: number,
   ) {
     return this.aiService.getEpisodicMemory(userId, limit, days);
   }
@@ -91,6 +93,13 @@ export class MemoryController {
   @ApiOperation({ summary: 'Create episodic memory' })
   async createEpisode(@Body() dto: CreateEpisodeDto) {
     return this.aiService.createEpisode(dto);
+  }
+
+  @Post('episodic/summarize')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Summarize session and save as episodic memory' })
+  async summarizeEpisode(@Body() dto: SummarizeSessionDto) {
+    return this.aiService.summarizeEpisode(dto);
   }
 
   @Get('stats/:userId')

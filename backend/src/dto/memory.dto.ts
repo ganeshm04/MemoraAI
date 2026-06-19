@@ -96,3 +96,13 @@ export class CreateEpisodeDto {
   @IsNumber()
   message_count?: number = 0;
 }
+
+export class SummarizeSessionDto {
+  @ApiProperty({ description: 'User identifier' })
+  @IsString()
+  user_id: string;
+
+  @ApiProperty({ description: 'Session identifier' })
+  @IsString()
+  session_id: string;
+}

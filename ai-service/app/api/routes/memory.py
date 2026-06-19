@@ -5,12 +5,15 @@ Memory management endpoints for short-term, long-term, and episodic memory.
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional, list
+from typing import Optional
 import structlog
 
 from app.memory.short_term import short_term_memory, ConversationContext
 from app.memory.long_term import long_term_memory, UserFact
 from app.memory.episodic import episodic_memory, Episode
+from app.generation.gemini import safe_gemini_client, GenerationRequest
+from app.prompts.templates import prompt_manager
+from app.api.routes.query import extract_and_store_facts
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/memory", tags=["memory"])
@@ -51,6 +54,11 @@ class CreateEpisodeRequest(BaseModel):
     sentiment: str = "neutral"
     duration_minutes: int = 0
     message_count: int = 0
+
+
+class SummarizeSessionRequest(BaseModel):
+    user_id: str
+    session_id: str
 
 
 @router.get("/short/{session_id}")
@@ -235,6 +243,103 @@ async def create_episode(request: CreateEpisodeRequest):
 
     except Exception as e:
         logger.error("em_create_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/episodic/summarize")
+async def summarize_session(request: SummarizeSessionRequest):
+    """Automatically extract facts and summarize a session into episodic memory."""
+    logger.info("em_summarize_request", user_id=request.user_id, session_id=request.session_id)
+
+    try:
+        # 1. Fetch conversation history
+        messages = await short_term_memory.get_conversation(request.session_id)
+        if not messages:
+            logger.info("em_summarize_skipped_empty_conversation", session_id=request.session_id)
+            return {"success": True, "message": "No conversation history to summarize"}
+
+        # 2. Extract long-term facts from the conversation
+        try:
+            logger.info("em_summarize_extracting_ltm_facts", session_id=request.session_id)
+            await extract_and_store_facts(request.user_id, messages)
+        except Exception as e:
+            logger.warning("em_summarize_ltm_extraction_failed", error=str(e))
+
+        # 3. Generate episodic summary
+        conversation = [
+            {"role": msg.role, "content": msg.content}
+            for msg in messages
+        ]
+
+        system_prompt, user_prompt = prompt_manager.get_episodic_summary_prompt(conversation)
+        gen_request = GenerationRequest(
+            prompt=user_prompt,
+            system_prompt=system_prompt,
+            temperature=0.3,
+            max_tokens=1024,
+            response_mime_type="application/json",
+        )
+
+        generation = await safe_gemini_client.generate(gen_request)
+
+        import json
+        import re
+        summary_data = {}
+        try:
+            text = generation.text.strip()
+            if text.startswith("```json"):
+                text = text[7:]
+            elif text.startswith("```"):
+                text = text.split("\n", 1)[1]
+            if text.endswith("```"):
+                text = text.rsplit("```", 1)[0]
+            text = text.strip()
+
+            # Robustly isolate JSON block matching outer braces
+            json_match = re.search(r'\{.*\}', text, re.DOTALL)
+            if json_match:
+                text = json_match.group(0)
+
+            summary_data = json.loads(text)
+        except Exception as e:
+            logger.warning("em_summarize_json_parse_failed", error=str(e), text=generation.text)
+            summary_data = {
+                "summary": f"Interaction session of {len(messages)} messages.",
+                "key_topics": [],
+                "important_facts": [],
+                "sentiment": "neutral"
+            }
+
+        summary = summary_data.get("summary", f"Session with {len(messages)} messages.")
+        key_topics = summary_data.get("key_topics", [])
+        important_facts = summary_data.get("important_facts", [])
+        sentiment = summary_data.get("sentiment", "neutral")
+
+        # Estimate duration
+        duration_minutes = 0
+        if len(messages) >= 2:
+            first_msg = messages[0]
+            last_msg = messages[-1]
+            if first_msg.created_at and last_msg.created_at:
+                delta = last_msg.created_at - first_msg.created_at
+                duration_minutes = max(1, int(delta.total_seconds() / 60))
+
+        # 4. Create episodic memory record
+        episode_id = await episodic_memory.create_episode(
+            user_id=request.user_id,
+            session_id=request.session_id,
+            summary=summary,
+            key_topics=key_topics,
+            important_facts=important_facts,
+            sentiment=sentiment,
+            duration_minutes=duration_minutes,
+            message_count=len(messages),
+        )
+
+        return {"success": True, "episode_id": episode_id}
+
+    except Exception as e:
+        logger.error("em_summarize_failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -1,8 +1,12 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 
-const Badge = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => (
+interface BadgeProps extends React.HTMLAttributes<HTMLDivElement> {
+  variant?: string;
+}
+
+const Badge = React.forwardRef<HTMLDivElement, BadgeProps>(
+  ({ className, variant, ...props }, ref) => (
     <div
       ref={ref}
       className={cn(

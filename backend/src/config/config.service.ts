@@ -48,12 +48,13 @@ export class ConfigService {
     };
   }
 
-  get(): AppConfig {
+  get(): AppConfig;
+  get<T>(key: string): T;
+  get<T>(key?: string): AppConfig | T {
+    if (key) {
+      return this.config[key as keyof AppConfig] as T;
+    }
     return this.config;
-  }
-
-  get<T>(key: string): T {
-    return this.config[key as keyof AppConfig] as T;
   }
 
   isProduction(): boolean {
@@ -65,7 +66,7 @@ export class ConfigService {
   }
 
   private parseCorsOrigins(): string[] {
-    const origins = process.env.CORS_ORIGINS || 'http://localhost:3000,http://localhost:4000';
+    const origins = process.env.CORS_ORIGINS || 'http://localhost:3000,http://localhost:3001,http://localhost:4000';
     return origins.split(',').map((o) => o.trim());
   }
 }

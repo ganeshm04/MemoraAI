@@ -3,9 +3,10 @@ MemoraAI - Short-Term Memory
 Conversation window management for active sessions.
 """
 
-from typing import Optional, list
+from typing import Optional
 from dataclasses import dataclass, field
 from datetime import datetime
+import json
 import structlog
 
 from db.connection import db
@@ -86,8 +87,11 @@ class ShortTermMemory:
                 RETURNING id
             """
             message_id = await db.fetchval(
-                query, session_id, role, content, token_count, metadata or {}
+                query, session_id, role, content, token_count, json.dumps(metadata or {})
             )
+
+            from app.observability.metrics import memory_metrics
+            memory_metrics.record_memory_operation("write", "short", 1)
 
             await self._trim_session(session_id)
 
@@ -145,6 +149,9 @@ class ShortTermMemory:
                 message_count=len(entries),
             )
 
+            from app.observability.metrics import memory_metrics
+            memory_metrics.record_memory_operation("read", "short", len(entries))
+
             return entries
 
         except Exception as e:
@@ -195,6 +202,10 @@ class ShortTermMemory:
         try:
             query = "DELETE FROM short_term_memory WHERE session_id = $1"
             result = await db.execute(query, session_id)
+            
+            from app.observability.metrics import memory_metrics
+            memory_metrics.record_memory_operation("delete", "short", 1)
+
             logger.info("stm_session_cleared", session_id=session_id)
             return 1
         except Exception as e:

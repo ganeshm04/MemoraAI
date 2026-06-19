@@ -3,14 +3,17 @@ MemoraAI - Ingestion Processor
 Unified ingestion pipeline for PDF, URL, and text sources.
 """
 
+import json
+import structlog
 from typing import Optional, Literal
 from dataclasses import dataclass, field
-import structlog
 
 from app.ingestion.pdf_parser import pdf_parser
 from app.ingestion.url_scraper import url_scraper
 from app.ingestion.text_cleaner import text_cleaner, content_filter
 from app.ingestion.chunker import chunker, Chunker, ChunkMetadata
+from app.embeddings.embedder import embedder
+from db.connection import db, vector_store
 
 logger = structlog.get_logger(__name__)
 
@@ -75,16 +78,29 @@ class IngestionProcessor:
             text = await pdf_parser.extract_text(file_path)
             text = self._process_text(text)
             
+            # Use original filename as the source identifier and title if available
+            original_filename = metadata.get("filename") if metadata else None
+            db_source = original_filename or file_path
+            
             chunks = self.chunker.chunk_text(
                 text=text,
                 document_id=0,
-                source=file_path,
+                source=db_source,
                 custom_config={"file_path": file_path, **(metadata or {})},
+            )
+            
+            doc_id = await self._persist_chunks(
+                chunks=chunks,
+                source=db_source,
+                source_type="pdf",
+                title=original_filename or (metadata.get("title") if metadata else None) or file_path,
+                metadata=metadata,
             )
             
             return IngestionResult(
                 success=True,
-                source=file_path,
+                document_id=doc_id,
+                source=db_source,
                 source_type="pdf",
                 chunks_created=len(chunks),
                 text_length=len(text),
@@ -121,25 +137,31 @@ class IngestionProcessor:
             text = self._process_text(text)
             
             url_metadata = await url_scraper.get_metadata(url)
+            merged_metadata = {**url_metadata, **(metadata or {})}
             
             chunks = self.chunker.chunk_text(
                 text=text,
                 document_id=0,
                 source=url,
-                custom_config={"url": url, **url_metadata, **(metadata or {})},
+                custom_config={"url": url, **merged_metadata},
+            )
+            
+            doc_id = await self._persist_chunks(
+                chunks=chunks,
+                source=url,
+                source_type="url",
+                title=merged_metadata.get("title"),
+                metadata=merged_metadata,
             )
             
             return IngestionResult(
                 success=True,
+                document_id=doc_id,
                 source=url,
                 source_type="url",
                 chunks_created=len(chunks),
                 text_length=len(text),
-                metadata={
-                    "url": url,
-                    **url_metadata,
-                    **(metadata or {}),
-                },
+                metadata=merged_metadata,
             )
 
         except Exception as e:
@@ -180,8 +202,17 @@ class IngestionProcessor:
                 custom_config=metadata or {},
             )
             
+            doc_id = await self._persist_chunks(
+                chunks=chunks,
+                source=source,
+                source_type="text",
+                title=metadata.get("title") if metadata else None,
+                metadata=metadata,
+            )
+            
             return IngestionResult(
                 success=True,
+                document_id=doc_id,
                 source=source,
                 source_type="text",
                 chunks_created=len(chunks),
@@ -229,6 +260,57 @@ class IngestionProcessor:
         logger.info("batch_ingestion_completed", total=len(sources), successful=sum(1 for r in results if r.success))
         
         return results
+
+    async def _persist_chunks(
+        self,
+        chunks: list[tuple[str, ChunkMetadata]],
+        source: str,
+        source_type: str,
+        title: Optional[str] = None,
+        metadata: Optional[dict] = None,
+    ) -> int:
+        """Persist chunks with embeddings to the database."""
+        if not chunks:
+            logger.warning("no_chunks_to_persist", source=source)
+            return 0
+
+        try:
+            doc_id = await db.fetchval(
+                """INSERT INTO documents (source, source_type, title, metadata)
+                   VALUES ($1, $2, $3, $4) RETURNING id""",
+                source, source_type, title or source,
+                json.dumps(metadata or {}),
+            )
+
+            chunk_texts = [c[0] for c in chunks]
+            embeddings = await embedder.embed_texts(chunk_texts)
+
+            for (chunk_text, chunk_meta), embedding in zip(chunks, embeddings):
+                meta = chunk_meta.to_dict()
+                vector_str = f"[{','.join(str(v) for v in embedding)}]"
+                await db.execute(
+                    """INSERT INTO chunks (document_id, content, embedding, metadata, chunk_index, total_chunks, token_count)
+                       VALUES ($1, $2, $3::vector, $4, $5, $6, $7)""",
+                    doc_id, chunk_text, vector_str,
+                    json.dumps(meta),
+                    chunk_meta.chunk_index,
+                    chunk_meta.total_chunks,
+                    chunk_meta.token_count,
+                )
+
+            await db.execute("UPDATE documents SET indexed = TRUE WHERE id = $1", doc_id)
+
+            logger.info(
+                "chunks_persisted",
+                document_id=doc_id,
+                chunks_count=len(chunks),
+                source=source,
+            )
+            return doc_id
+
+        except Exception as e:
+            logger.error("chunk_persistence_failed", source=source, error=str(e))
+            raise
 
     def _process_text(self, text: str) -> str:
         """Process and validate text content."""

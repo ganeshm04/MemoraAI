@@ -1,0 +1,22 @@
+[
+  {
+    "id": "q1",
+    "query": "Who is Ganesh Meti?",
+    "reference_answer": "Ganesh Meti is a Full Stack AI Engineer, Software Engineer, and product-focused builder with experience building end-to-end applications using React, Next.js, TypeScript, Node.js, PostgreSQL, and REST APIs."
+  },
+  {
+    "id": "q2",
+    "query": "What are some of the key projects developed by Ganesh Meti?",
+    "reference_answer": "Key projects developed by Ganesh Meti include an AI Job Coach, PDF Summary Chat, Forever Clothing Platform, and AI Video to Quiz Generator."
+  },
+  {
+    "id": "q3",
+    "query": "Where has Ganesh Meti interned?",
+    "reference_answer": "Ganesh Meti has worked as a Full Stack Developer Intern at Annam.AI IIT Ropar and Colt Assist."
+  },
+  {
+    "id": "q4",
+    "query": "Which university is Ganesh Meti associated with?",
+    "reference_answer": "Ganesh Meti is currently pursuing a Bachelor of Engineering in Computer Science at Visvesvaraya Technological University (VTU)."
+  }
+]

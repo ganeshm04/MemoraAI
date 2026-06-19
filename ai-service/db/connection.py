@@ -4,6 +4,7 @@ PostgreSQL connection with pgvector and async support.
 """
 
 import asyncpg
+from pathlib import Path
 from typing import Optional
 from contextlib import asynccontextmanager
 import structlog
@@ -38,15 +39,12 @@ class DatabaseConnection:
 
         try:
             self._pool = await asyncpg.create_pool(
-                host="localhost",
-                port=5432,
-                user="postgres",
-                password="postgres",
-                database="memora",
+                dsn=config.database.url,
                 min_size=5,
                 max_size=config.database.pool_size,
                 command_timeout=config.settings.DB_POOL_TIMEOUT,
             )
+            await self.initialize_schema()
             logger.info("database_connected", pool_size=config.database.pool_size)
         except Exception as e:
             logger.error("database_connection_failed", error=str(e))
@@ -97,6 +95,22 @@ class DatabaseConnection:
         async with self.acquire() as conn:
             await conn.executemany(query, values)
 
+    async def initialize_schema(self) -> None:
+        """Initialize database schema from the shared schema.sql."""
+
+        schema_path = Path(__file__).resolve().parents[2] / 'db' / 'schema.sql'
+        if not schema_path.exists():
+            logger.warning("schema_file_missing", path=str(schema_path))
+            return
+
+        schema_sql = schema_path.read_text(encoding='utf-8')
+        try:
+            async with self.acquire() as conn:
+                await conn.execute(schema_sql)
+            logger.info("database_schema_initialized", schema_file=str(schema_path))
+        except Exception as e:
+            logger.warning("schema_initialization_failed", error=str(e), path=str(schema_path))
+
 
 class VectorStore:
     """pgvector operations for semantic search."""
@@ -114,7 +128,12 @@ class VectorStore:
         filter_value: Optional[str] = None,
     ) -> list[dict]:
         """Perform cosine similarity search using pgvector."""
+        if table not in ["chunks", "documents"]:
+            raise ValueError(f"Invalid table context: {table}")
+        if filter_column and filter_column not in ["document_id", "source", "source_type"]:
+            raise ValueError(f"Invalid filter column context: {filter_column}")
         try:
+            vector_str = f"[{','.join(str(v) for v in query_vector)}]"
             if filter_column and filter_value:
                 query = f"""
                     SELECT id, content, metadata, embedding <=> $1::vector AS distance
@@ -125,7 +144,7 @@ class VectorStore:
                     LIMIT $4
                 """
                 results = await self.db.fetch(
-                    query, query_vector, filter_value, 1 - threshold, top_k
+                    query, vector_str, filter_value, 1 - threshold, top_k
                 )
             else:
                 query = f"""
@@ -134,15 +153,15 @@ class VectorStore:
                     ORDER BY embedding <=> $1::vector
                     LIMIT $2
                 """
-                results = await self.db.fetch(query, query_vector, top_k)
+                results = await self.db.fetch(query, vector_str, top_k)
 
             return [
                 {
                     "id": row["id"],
                     "content": row["content"],
                     "metadata": row["metadata"],
-                    "distance": row["distance"],
-                    "similarity": 1 - row["distance"],
+                    "distance": row["distance"] if row["distance"] is not None else 1.0,
+                    "similarity": 1 - row["distance"] if row["distance"] is not None else 0.0,
                 }
                 for row in results
             ]
@@ -158,12 +177,15 @@ class VectorStore:
         metadata: dict,
     ) -> int:
         """Insert vector with content and metadata."""
+        if table not in ["chunks", "documents"]:
+            raise ValueError(f"Invalid table context: {table}")
+        vector_str = f"[{','.join(str(v) for v in embedding)}]"
         query = f"""
             INSERT INTO {table} (content, embedding, metadata)
             VALUES ($1, $2::vector, $3)
             RETURNING id
         """
-        return await self.db.fetchval(query, content, embedding, metadata)
+        return await self.db.fetchval(query, content, vector_str, metadata)
 
     async def batch_insert_vectors(
         self,
@@ -171,11 +193,18 @@ class VectorStore:
         values: list[tuple[str, list[float], dict]],
     ) -> None:
         """Batch insert vectors."""
+        if table not in ["chunks", "documents"]:
+            raise ValueError(f"Invalid table context: {table}")
+        formatted_values = []
+        for content, embedding, metadata in values:
+            vector_str = f"[{','.join(str(v) for v in embedding)}]"
+            formatted_values.append((content, vector_str, metadata))
+            
         query = f"""
             INSERT INTO {table} (content, embedding, metadata)
             VALUES ($1, $2::vector, $3)
         """
-        await self.db.execute_many(query, values)
+        await self.db.execute_many(query, formatted_values)
 
 
 class FullTextSearch:
@@ -192,6 +221,10 @@ class FullTextSearch:
         search_column: str = "content",
     ) -> list[dict]:
         """Perform full-text search with ts_rank."""
+        if table not in ["chunks", "documents"]:
+            raise ValueError(f"Invalid table context: {table}")
+        if search_column not in ["content"]:
+            raise ValueError(f"Invalid search column context: {search_column}")
         try:
             sql_query = f"""
                 SELECT 
