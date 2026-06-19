@@ -82,18 +82,8 @@ memora-ai/
 ├── frontend/            # Next.js 15 - Chat UI, retrieval panel, memory display
 ├── db/
 │   └── schema.sql      # PostgreSQL + pgvector schema
-├── docs/
-│   ├── LOCAL_SETUP.md   # Detailed setup guide
-│   ├── PRD.md          # Product requirements
-│   └── ARCHITECTURE_NOTES.md
 └── docker-compose.yml   # Full stack orchestration
 ```
-
----
-
-## 🔧 Detailed Setup Guide
-
-For complete step-by-step instructions, see [docs/LOCAL_SETUP.md](./docs/LOCAL_SETUP.md)
 
 ---
 
@@ -135,7 +125,6 @@ curl -X POST http://localhost:8000/api/v1/query `
 
 ---
 
-
 ## ⚙️ Tech Stack
 
 | Layer | Technology |
@@ -146,6 +135,7 @@ curl -X POST http://localhost:8000/api/v1/query `
 | Database | PostgreSQL + pgvector |
 | AI | Gemini 2.5 Flash, text-embedding-004 |
 
+---
 
 ## 🔧 Troubleshooting
 
@@ -165,3 +155,9 @@ taskkill /PID <process_id> /F
 cd ai-service
 pip install -r requirements.txt --force-reinstall
 ```
+
+---
+
+## 📄 License
+
+MIT
