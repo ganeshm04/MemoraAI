@@ -15,6 +15,7 @@ interface MessageBubbleProps {
 export function MessageBubble({ message, onSelectChunks }: MessageBubbleProps) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
+  const chunks = message.chunks;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content);
@@ -137,14 +138,14 @@ export function MessageBubble({ message, onSelectChunks }: MessageBubbleProps) {
               {message.tokens_used} tokens
             </Badge>
           )}
-          {message.chunks && message.chunks.length > 0 && (
+          {chunks && chunks.length > 0 && (
             <Badge
               variant="secondary"
               className="text-[9px] px-1.5 py-0 h-4 bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 cursor-pointer hover:bg-cyan-500/20 transition-all font-mono"
-              onClick={() => onSelectChunks?.(message.chunks)}
+              onClick={() => onSelectChunks?.(chunks)}
             >
               <FileText className="w-2.5 h-2.5 mr-0.5" />
-              {message.chunks.length} sources
+              {chunks.length} sources
             </Badge>
           )}
         </div>
