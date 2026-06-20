@@ -150,6 +150,11 @@ class ApiClient {
   }
 
   async healthCheck() {
+    if (API_BASE_URL.startsWith('http')) {
+      const rootUrl = API_BASE_URL.replace(/\/api\/v1\/?$/, '');
+      const response = await axios.get(`${rootUrl}/health`);
+      return response.data;
+    }
     const response = await this.client.get('/health');
     return response.data;
   }
