@@ -7,6 +7,7 @@ export interface AppConfig {
   aiServiceUrl: string;
   aiServiceTimeout: number;
   corsOrigins: string[];
+  metricsToken: string;
   rateLimit: {
     ttl: number;
     limit: number;
@@ -33,6 +34,7 @@ export class ConfigService {
       aiServiceUrl: process.env.AI_SERVICE_URL || 'http://localhost:8000',
       aiServiceTimeout: parseInt(process.env.AI_SERVICE_TIMEOUT || '120000', 10),
       corsOrigins: this.parseCorsOrigins(),
+      metricsToken: process.env.METRICS_TOKEN || '',
       rateLimit: {
         ttl: parseInt(process.env.RATE_LIMIT_TTL || '60000', 10),
         limit: parseInt(process.env.RATE_LIMIT_LIMIT || '100', 10),

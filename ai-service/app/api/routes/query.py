@@ -54,7 +54,7 @@ class QueryResponse(BaseModel):
     sources: list[str]
 
 
-@router.post("/", response_model=QueryResponse)
+@router.post("", response_model=QueryResponse)
 async def query(request: QueryRequest):
     """
     Main query endpoint with adaptive retrieval and generation.

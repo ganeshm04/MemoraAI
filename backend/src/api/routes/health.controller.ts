@@ -1,4 +1,4 @@
-import { Controller, Get, Logger } from '@nestjs/common';
+import { Controller, Get, Logger, Headers, HttpException, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '../../config/config.service';
@@ -70,5 +70,48 @@ export class HealthController {
   @ApiOperation({ summary: 'Liveness check' })
   live() {
     return { alive: true, timestamp: new Date().toISOString() };
+  }
+
+  @Get('metrics/dashboard')
+  @ApiOperation({ summary: 'Get aggregated JSON metrics for UI dashboard' })
+  async getDashboardMetrics(@Headers('x-metrics-token') token?: string) {
+    const config = this.configService.get();
+    
+    if (config.metricsToken && token !== config.metricsToken) {
+      throw new HttpException('Unauthorized access to dashboard metrics', HttpStatus.UNAUTHORIZED);
+    }
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get(`${config.aiServiceUrl}/api/v1/health/metrics/dashboard`, {
+          timeout: 5000,
+        }),
+      );
+      return response.data;
+    } catch (error) {
+      this.logger.error('Failed to fetch dashboard metrics from AI service', error.stack);
+      return {
+        retrieval: {
+          search_counts: { vector: 0, bm25: 0, hybrid: 0, total: 0 },
+          avg_durations: { vector: 0, bm25: 0, hybrid: 0, fusion: 0, rerank: 0 },
+          total_fusions: 0,
+          total_reranks: 0
+        },
+        generation: {
+          total_generations: 0,
+          avg_duration_ms: 0,
+          total_tokens: 0,
+          avg_tokens_per_req: 0
+        },
+        embedding: {
+          total_embeddings: 0,
+          avg_duration_ms: 0
+        },
+        memory: {
+          reads: { short_term: 0, long_term: 0, episodic: 0, total: 0 },
+          writes: { short_term: 0, long_term: 0, episodic: 0, total: 0 }
+        }
+      };
+    }
   }
 }

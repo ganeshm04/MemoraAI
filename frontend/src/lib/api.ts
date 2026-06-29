@@ -149,6 +149,12 @@ class ApiClient {
     return response.data;
   }
 
+  async getDashboardMetrics(token?: string) {
+    const headers = token ? { 'x-metrics-token': token } : {};
+    const response = await this.client.get('/health/metrics/dashboard', { headers });
+    return response.data;
+  }
+
   async healthCheck() {
     if (API_BASE_URL.startsWith('http')) {
       const rootUrl = API_BASE_URL.replace(/\/api\/v1\/?$/, '');

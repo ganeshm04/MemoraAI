@@ -66,8 +66,13 @@ class Embedder:
 
     def _get_api_keys(self) -> list[str]:
         """Split and return the list of Google/Gemini API keys configured for embeddings."""
-        raw_keys = config.settings.GOOGLE_API_KEY or config.settings.GEMINI_API_KEY
-        return [k.strip() for k in raw_keys.split(",") if k.strip()]
+        combined = f"{config.settings.GOOGLE_API_KEY or ''},{config.settings.GEMINI_API_KEY or ''}"
+        unique_keys = []
+        for k in combined.split(","):
+            val = k.strip()
+            if val and val not in unique_keys:
+                unique_keys.append(val)
+        return unique_keys
 
     def _get_client(self):
         if self._http_client is None:
@@ -156,8 +161,8 @@ class Embedder:
                         key_index=key_idx,
                     )
                     
-                    # Update current active key index
-                    self._current_key_idx = key_idx
+                    # Rotate to next key index for next request to distribute load evenly
+                    self._current_key_idx = (key_idx + 1) % len(keys)
                     return embedding
 
                 except Exception as e:

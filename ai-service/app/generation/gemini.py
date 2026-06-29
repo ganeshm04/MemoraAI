@@ -152,8 +152,8 @@ class GeminiClient:
                     key_index=key_idx,
                 )
 
-                # Update current active key index to the working key
-                self._current_key_idx = key_idx
+                # Rotate to next key index for next request to distribute load evenly
+                self._current_key_idx = (key_idx + 1) % len(keys)
 
                 return GenerationResponse(
                     text=text,
